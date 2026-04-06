@@ -61,6 +61,10 @@ export function validateSettings(settings: AppSettings, mode: ChatMode): FieldEr
     errors.proxyBaseUrl = 'Enter a valid http:// or https:// base URL.';
   }
 
+  if (!settings.proxy.apiKey.trim()) {
+    errors.proxyApiKey = 'Cato Guard key is required in proxy mode.';
+  }
+
   if (!settings.proxy.model.trim()) {
     errors.proxyModel = 'Choose or enter a model for the proxy request.';
   }

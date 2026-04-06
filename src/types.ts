@@ -16,6 +16,8 @@ export type DirectSettings = {
 
 export type ProxySettings = {
   baseUrl: string;
+  apiKey: string;
+  userEmail: string;
   model: string;
   headersJson: string;
   systemPrompt: string;

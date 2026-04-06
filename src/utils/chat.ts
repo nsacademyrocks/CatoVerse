@@ -11,9 +11,11 @@ export const DEFAULT_SETTINGS = {
     systemPrompt: 'You are a concise, helpful AI assistant.',
   },
   proxy: {
-    baseUrl: '',
+    baseUrl: 'https://api.aisec.in1.catonetworks.com/fw/v1/proxy/gemini',
+    apiKey: '',
+    userEmail: '',
     model: 'gemini-3-flash-preview',
-    headersJson: '{\n  "X-Client": "local-cato-chat"\n}',
+    headersJson: '{}',
     systemPrompt: 'You are a concise, helpful AI assistant.',
   },
 } as const;

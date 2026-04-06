@@ -6,7 +6,7 @@ const STORAGE_KEY = 'local-cato-chat:preferences';
 type StoredPreferences = {
   mode: AppSettings['mode'];
   direct: Pick<DirectSettings, 'model' | 'systemPrompt'>;
-  proxy: Pick<ProxySettings, 'baseUrl' | 'model' | 'headersJson' | 'systemPrompt'>;
+  proxy: Pick<ProxySettings, 'baseUrl' | 'userEmail' | 'model' | 'headersJson' | 'systemPrompt'>;
 };
 
 function getDefaults(): AppSettings {
@@ -50,6 +50,8 @@ export function loadSettings(): AppSettings {
       proxy: {
         ...DEFAULT_SETTINGS.proxy,
         baseUrl: parsed.proxy?.baseUrl ?? DEFAULT_SETTINGS.proxy.baseUrl,
+        apiKey: '',
+        userEmail: parsed.proxy?.userEmail ?? DEFAULT_SETTINGS.proxy.userEmail,
         model: parsed.proxy?.model ?? DEFAULT_SETTINGS.proxy.model,
         headersJson: parsed.proxy?.headersJson ?? DEFAULT_SETTINGS.proxy.headersJson,
         systemPrompt: parsed.proxy?.systemPrompt ?? DEFAULT_SETTINGS.proxy.systemPrompt,
@@ -74,6 +76,7 @@ export function persistSettings(settings: AppSettings): void {
     },
     proxy: {
       baseUrl: settings.proxy.baseUrl,
+      userEmail: settings.proxy.userEmail,
       model: settings.proxy.model,
       headersJson: settings.proxy.headersJson,
       systemPrompt: settings.proxy.systemPrompt,

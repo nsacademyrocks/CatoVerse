@@ -8,12 +8,14 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler
 from typing import Any
+from uuid import uuid4
 
 
 HOST = "127.0.0.1"
 PORT = 4501
 REQUEST_TIMEOUT_SECONDS = 60
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+DEFAULT_CATO_PROXY_BASE = "/fw/v1/proxy/gemini"
 
 
 def json_bytes(payload: Any) -> bytes:
@@ -62,7 +64,11 @@ def forward_json_request(url: str, headers: dict[str, str], payload: dict[str, A
     try:
         decoded = json.loads(body.decode("utf-8"))
     except json.JSONDecodeError:
-        return status, {"error": {"message": "Upstream service returned non-JSON data."}}
+        text_body = body.decode("utf-8", errors="replace").strip()
+        detail = "Upstream service returned non-JSON data."
+        if text_body:
+            detail = f"{detail} {text_body}"
+        return status, {"error": {"message": detail}}
 
     if isinstance(decoded, dict):
         return status, decoded
@@ -83,21 +89,55 @@ def clean_header_map(value: Any) -> dict[str, str]:
     return headers
 
 
-def build_openai_endpoint(base_url: str) -> str:
+def build_cato_gemini_endpoint(base_url: str, model: str) -> str:
     normalized = base_url.strip().rstrip("/")
     if not normalized:
         raise ValueError("Base URL is required.")
+    if not model.strip():
+        raise ValueError("Proxy model is required.")
 
     parsed = urllib.parse.urlparse(normalized)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Base URL must be a valid http:// or https:// URL.")
 
     lowered_path = parsed.path.rstrip("/").lower()
-    if lowered_path.endswith("/chat/completions"):
+    if lowered_path.endswith(":generatecontent"):
         return normalized
-    if lowered_path.endswith("/v1"):
-        return f"{normalized}/chat/completions"
-    return f"{normalized}/v1/chat/completions"
+    if lowered_path.endswith("/v1beta/models"):
+        return f"{normalized}/{urllib.parse.quote(model)}:generateContent"
+    if lowered_path.endswith("/fw/v1/proxy/gemini"):
+        return f"{normalized}/v1beta/models/{urllib.parse.quote(model)}:generateContent"
+    if "/fw/v1/proxy/gemini/v1beta/models/" in lowered_path:
+        return f"{normalized}/{urllib.parse.quote(model)}:generateContent"
+    return f"{normalized}{DEFAULT_CATO_PROXY_BASE}/v1beta/models/{urllib.parse.quote(model)}:generateContent"
+
+
+def to_gemini_contents(messages: list[Any]) -> list[dict[str, Any]]:
+    contents: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+
+        role = str(message.get("role", "")).strip()
+        content = str(message.get("content", "")).strip()
+        if not content:
+            continue
+
+        if role == "assistant":
+            gemini_role = "model"
+        elif role == "user":
+            gemini_role = "user"
+        else:
+            continue
+
+        contents.append(
+            {
+                "role": gemini_role,
+                "parts": [{"text": content}],
+            }
+        )
+
+    return contents
 
 
 class ChatProxyHandler(BaseHTTPRequestHandler):
@@ -166,25 +206,38 @@ class ChatProxyHandler(BaseHTTPRequestHandler):
 
     def handle_proxy_chat(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         base_url = str(payload.get("baseUrl", "")).strip()
+        api_key = str(payload.get("apiKey", "")).strip()
         model = str(payload.get("model", "")).strip()
         messages = payload.get("messages", [])
         custom_headers = clean_header_map(payload.get("headers"))
+        system_prompt = str(payload.get("systemPrompt", "")).strip()
+        user_email = str(payload.get("userEmail", "")).strip()
 
+        if not api_key:
+            raise ValueError("Cato Guard key is required.")
         if not model:
             raise ValueError("Proxy model is required.")
         if not isinstance(messages, list):
             raise ValueError("Messages must be an array.")
 
+        body: dict[str, Any] = {
+            "contents": to_gemini_contents(messages),
+        }
+        if system_prompt:
+            body["systemInstruction"] = {
+                "parts": [{"text": system_prompt}],
+            }
+
         return forward_json_request(
-            build_openai_endpoint(base_url),
+            build_cato_gemini_endpoint(base_url, model),
             {
                 "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+                "x-aim-session-id": str(uuid4()),
+                **({"x-aim-user-email": user_email} if user_email else {}),
                 **custom_headers,
             },
-            {
-                "model": model,
-                "messages": messages,
-            },
+            body,
         )
 
     def send_json(self, status: int, payload: dict[str, Any]) -> None:

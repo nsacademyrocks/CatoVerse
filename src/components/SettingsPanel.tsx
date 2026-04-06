@@ -88,7 +88,7 @@ function SecretField({
 
 export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChange }: SettingsPanelProps) {
   let headersPreview = '{}';
-  let headersHelper = 'Headers are merged into the outgoing OpenAI-format request.';
+  let headersHelper = 'Headers are sent with the outgoing Gemini generateContent request.';
   let headersError = fieldErrors.proxyHeadersJson;
 
   try {
@@ -108,7 +108,7 @@ export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChang
         <p className="settings-copy">
           {settings.mode === 'direct'
             ? 'Send OpenAI-compatible chat messages straight to Google Gemini.'
-            : 'Send the same OpenAI-compatible chat payload to your own AI gateway.'}
+            : 'Send Gemini traffic through Cato AI Proxy with a Guard Key, auto session ID, and optional user identity.'}
         </p>
       </div>
 
@@ -164,12 +164,26 @@ export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChang
         </div>
       ) : (
         <div className="settings-grid">
+          <SecretField
+            label="Cato Guard key"
+            value={settings.proxy.apiKey}
+            placeholder="guard_key"
+            error={fieldErrors.proxyApiKey}
+            disabled={disabled}
+            onChange={(apiKey) =>
+              onSettingsChange({
+                ...settings,
+                proxy: { ...settings.proxy, apiKey },
+              })
+            }
+          />
+
           <label className="field">
             <span>Gateway base URL</span>
             <input
               type="url"
               value={settings.proxy.baseUrl}
-              placeholder="https://gateway.example.com"
+              placeholder="https://api.aisec.in1.catonetworks.com/fw/v1/proxy/gemini"
               onChange={(event) =>
                 onSettingsChange({
                   ...settings,
@@ -178,8 +192,25 @@ export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChang
               }
               disabled={disabled}
             />
-            <small>You can use a base ending in `/v1` or a full `/chat/completions` endpoint.</small>
+            <small>Match the Python sample base URL. The app appends `/v1beta/models/&lt;model&gt;:generateContent` automatically.</small>
             {fieldErrors.proxyBaseUrl ? <p className="field-error">{fieldErrors.proxyBaseUrl}</p> : null}
+          </label>
+
+          <label className="field">
+            <span>User email</span>
+            <input
+              type="email"
+              value={settings.proxy.userEmail}
+              placeholder="user@example.com"
+              onChange={(event) =>
+                onSettingsChange({
+                  ...settings,
+                  proxy: { ...settings.proxy, userEmail: event.target.value },
+                })
+              }
+              disabled={disabled}
+            />
+            <small>Optional. Sent as `x-aim-user-email` when provided.</small>
           </label>
 
           <ModelField
@@ -204,7 +235,7 @@ export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChang
             <textarea
               rows={5}
               value={settings.proxy.headersJson}
-              placeholder='{"Authorization":"Bearer ..."}'
+              placeholder='{"x-custom-trace-id":"abc-123"}'
               spellCheck={false}
               onChange={(event) =>
                 onSettingsChange({
@@ -214,7 +245,7 @@ export function SettingsPanel({ settings, fieldErrors, disabled, onSettingsChang
               }
               disabled={disabled}
             />
-            <small>{headersHelper}</small>
+            <small>{headersHelper} `x-goog-api-key` and `x-aim-session-id` are added automatically.</small>
             {headersError ? <p className="field-error">{headersError}</p> : null}
           </label>
 

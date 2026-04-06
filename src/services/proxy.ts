@@ -2,15 +2,14 @@ import type { ChatMessage, ProxySettings } from '../types';
 import { toAppError } from '../utils/chat';
 import { normalizeBaseUrl, parseHeadersJson } from '../utils/validation';
 
-type OpenAIMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+type GeminiPart = {
+  text?: string;
 };
 
 type ProxyResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | Array<{ type?: string; text?: string }>;
+  candidates?: Array<{
+    content?: {
+      parts?: GeminiPart[];
     };
   }>;
   error?: {
@@ -24,45 +23,15 @@ function withTimeout(timeoutMs: number): AbortSignal {
   return controller.signal;
 }
 
-function toOpenAIMessages(messages: ChatMessage[], systemPrompt: string): OpenAIMessage[] {
-  const mapped: OpenAIMessage[] = [];
-
-  if (systemPrompt.trim()) {
-    mapped.push({
-      role: 'system',
-      content: systemPrompt.trim(),
-    });
+function extractTextContent(parts: GeminiPart[] | undefined): string {
+  if (!Array.isArray(parts)) {
+    return '';
   }
 
-  for (const message of messages) {
-    if (message.role === 'system' || !message.content.trim()) {
-      continue;
-    }
-
-    mapped.push({
-      role: message.role,
-      content: message.content,
-    });
-  }
-
-  return mapped;
-}
-
-function extractTextContent(
-  content: string | Array<{ type?: string; text?: string }> | undefined,
-): string {
-  if (typeof content === 'string') {
-    return content.trim();
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => part.text ?? '')
-      .join('')
-      .trim();
-  }
-
-  return '';
+  return parts
+    .map((part) => part.text ?? '')
+    .join('')
+    .trim();
 }
 
 async function parseError(response: Response): Promise<never> {
@@ -117,6 +86,10 @@ export async function sendProxyMessage(settings: ProxySettings, messages: ChatMe
     throw toAppError('Missing base URL', 'Add a proxy base URL before sending.');
   }
 
+  if (!settings.apiKey.trim()) {
+    throw toAppError('Missing Guard key', 'Add your Cato Guard key before sending a proxy request.');
+  }
+
   if (!settings.model.trim()) {
     throw toAppError('Missing model', 'Choose a model before sending a proxy request.');
   }
@@ -129,9 +102,12 @@ export async function sendProxyMessage(settings: ProxySettings, messages: ChatMe
     signal: withTimeout(60000),
     body: JSON.stringify({
       baseUrl,
+      apiKey: settings.apiKey.trim(),
+      userEmail: settings.userEmail.trim(),
       model: settings.model.trim(),
       headers: parseHeadersJson(settings.headersJson),
-      messages: toOpenAIMessages(messages, settings.systemPrompt),
+      systemPrompt: settings.systemPrompt,
+      messages: messages,
     }),
   }).catch((error: unknown) => {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -149,12 +125,12 @@ export async function sendProxyMessage(settings: ProxySettings, messages: ChatMe
   }
 
   const payload = (await response.json()) as ProxyResponse;
-  const content = extractTextContent(payload.choices?.[0]?.message?.content);
+  const content = extractTextContent(payload.candidates?.[0]?.content?.parts);
 
   if (!content) {
     throw toAppError(
       'Unexpected response',
-      'The proxy response did not include assistant message content in an OpenAI-compatible format.',
+      'The proxy response did not include assistant text in Gemini generateContent format.',
     );
   }
 
